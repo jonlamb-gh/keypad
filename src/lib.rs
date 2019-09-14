@@ -1,8 +1,8 @@
 //! **Platform-agnostic driver for keypad matrix circuits**
 //!
 //! This driver lets you read the state of any key in a keypad matrix as if it
-//! was connected to a single input pin. It supports keypads of any size, and any
-//! embedded platform that implements the Rust
+//! was connected to a single input pin. It supports keypads of any size, and
+//! any embedded platform that implements the Rust
 //! [embedded-hal](https://crates.io/crates/embedded-hal) traits.
 //!
 //! ## Motivation
@@ -15,8 +15,8 @@
 //! ![matrix](https://raw.githubusercontent.com/e-matteson/keypad/58d087473246cdbf232b2831f9fc18c0a7a29fc7/matrix_schem.png)
 //!
 //! In this circuit, each row is an input pin with a pullup resistor, and each
-//! column is an open-drain output pin. You read the state of a particular key by
-//! driving its column pin low and reading its row pin.
+//! column is an open-drain output pin. You read the state of a particular key
+//! by driving its column pin low and reading its row pin.
 //!
 //! A downside of this approach is that it increases code complexity. Instead of
 //! reading a single input pin to check if a key is pressed, you need to
@@ -24,10 +24,10 @@
 //! the column high/floating again.
 //!
 //! The purpose of this driver is to use the `embedded-hal` traits to hide that
-//! complexity. It does this by giving you a set of virtual `KeyInput` pins, each
-//! of which represent one key in your keypad matrix. Because they implement the
-//! `InputPin` trait, you can treat each one like a single input pin, without
-//! worrying about the matrix-scanning that happens under the hood.
+//! complexity. It does this by giving you a set of virtual `KeyInput` pins,
+//! each of which represent one key in your keypad matrix. Because they
+//! implement the `InputPin` trait, you can treat each one like a single input
+//! pin, without worrying about the matrix-scanning that happens under the hood.
 //!
 //! This approach was inspired by the
 //! [shift-register-driver](https://github.com/JoshMcguigan/shift-register-driver)
@@ -125,7 +125,6 @@
 //!     let ((_r0, _r1, _r2, _r3), (_c0, _c1, _c2, _c3, _c4)) = keypad.release();
 //! }
 //! ```
-//!
 #![no_std]
 #![warn(missing_docs)]
 // Workaround needed as long as docs.rs is using rustc <1.30
@@ -140,10 +139,14 @@ pub extern crate embedded_hal;
 #[doc(hidden)]
 pub extern crate core as _core;
 
-pub mod mock_hal;
+pub extern crate void;
+
+// TODO
+//pub mod mock_hal;
 
 use core::cell::RefCell;
-use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::digital::v2::{InputPin, OutputPin};
+use void::Void;
 
 /// A virtual `embedded-hal` input pin representing one key of the keypad.
 ///
@@ -164,37 +167,42 @@ use embedded_hal::digital::{InputPin, OutputPin};
 /// 2) Reading from a `KeypadInput` is slower than reading from a real input
 /// pin, because it needs to change the output pin state twice for every read.
 pub struct KeypadInput<'a> {
-    row: &'a InputPin,
-    col: &'a RefCell<OutputPin>,
+    row: &'a dyn InputPin<Error = Void>,
+    col: &'a RefCell<dyn OutputPin<Error = Void>>,
 }
 
 impl<'a> KeypadInput<'a> {
     /// Create a new `KeypadInput`. For use in macros.
-    pub fn new(row: &'a InputPin, col: &'a RefCell<OutputPin>) -> Self {
+    pub fn new(
+        row: &'a dyn InputPin<Error = Void>,
+        col: &'a RefCell<dyn OutputPin<Error = Void>>,
+    ) -> Self {
         Self { row, col }
     }
 }
 
 impl<'a> InputPin for KeypadInput<'a> {
+    type Error = Void;
+
     /// Read the state of the key at this row and column. Not reentrant.
-    fn is_high(&self) -> bool {
-        !self.is_low()
+    fn is_high(&self) -> Result<bool, Self::Error> {
+        self.is_low().map(|b| !b)
     }
 
     /// Read the state of the key at this row and column. Not reentrant.
-    fn is_low(&self) -> bool {
-        self.col.borrow_mut().set_low();
-        let out = self.row.is_low();
-        self.col.borrow_mut().set_high();
-        out
+    fn is_low(&self) -> Result<bool, Self::Error> {
+        self.col.borrow_mut().set_low()?;
+        let out = self.row.is_low()?;
+        self.col.borrow_mut().set_high()?;
+        Ok(out)
     }
 }
 
 /// Define a new struct representing your keypad matrix circuit.
 ///
 /// Every pin has a unique type, depending on its pin number and its current
-/// mode. This struct is where you specify which pin types will be used in the rows
-/// and columns of the keypad matrix. All the row pins must implement the
+/// mode. This struct is where you specify which pin types will be used in the
+/// rows and columns of the keypad matrix. All the row pins must implement the
 /// `InputPin` trait, and the column pins must implement the `OutputPin` trait.
 ///
 /// You can specify the visibility of the struct (eg. `pub`) as usual, and add
@@ -202,7 +210,8 @@ impl<'a> InputPin for KeypadInput<'a> {
 ///
 /// Don't access or modify the struct's fields directly. Instead, use
 /// the methods implemented by this macro, documented here:
-/// [`example_generated::ExampleKeypad`](./example_generated/struct.ExampleKeypad.html)
+/// [`example_generated::ExampleKeypad`](./example_generated/struct.
+/// ExampleKeypad.html)
 ///
 /// # Example
 ///
@@ -278,13 +287,13 @@ macro_rules! keypad_struct {
             {
 
                 let rows: [
-                    &$crate::embedded_hal::digital::InputPin;
+                    &$crate::embedded_hal::digital::v2::InputPin<Error = $crate::void::Void>;
                     keypad_struct!(@count $($row_type)*)
                 ]
                     = keypad_struct!(@tuple  self.rows,  ($($row_type),*));
 
                 let columns: [
-                    &$crate::_core::cell::RefCell<$crate::embedded_hal::digital::OutputPin>;
+                    &$crate::_core::cell::RefCell<$crate::embedded_hal::digital::v2::OutputPin<Error = $crate::void::Void>>;
                     keypad_struct!(@count $($col_type)*)
                 ]
                     = keypad_struct!(@tuple  self.columns,  ($($col_type),*));
@@ -368,9 +377,11 @@ macro_rules! keypad_struct {
     };
 }
 
-/// Create an instance of the struct you defined with the `keypad_struct!()` macro..
+/// Create an instance of the struct you defined with the `keypad_struct!()`
+/// macro..
 ///
-/// The pin numbers and modes will need to match the ones you specified with `keypad_struct!()`.
+/// The pin numbers and modes will need to match the ones you specified with
+/// `keypad_struct!()`.
 ///
 /// ```
 /// # #![cfg_attr(docs_rs_workaround, feature(macro_vis_matcher))]
