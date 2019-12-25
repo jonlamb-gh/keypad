@@ -139,14 +139,12 @@ pub extern crate embedded_hal;
 #[doc(hidden)]
 pub extern crate core as _core;
 
-pub extern crate void;
-
 // TODO
 //pub mod mock_hal;
 
 use core::cell::RefCell;
+use core::convert::Infallible;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
-use void::Void;
 
 /// A virtual `embedded-hal` input pin representing one key of the keypad.
 ///
@@ -167,22 +165,22 @@ use void::Void;
 /// 2) Reading from a `KeypadInput` is slower than reading from a real input
 /// pin, because it needs to change the output pin state twice for every read.
 pub struct KeypadInput<'a> {
-    row: &'a dyn InputPin<Error = Void>,
-    col: &'a RefCell<dyn OutputPin<Error = Void>>,
+    row: &'a dyn InputPin<Error = Infallible>,
+    col: &'a RefCell<dyn OutputPin<Error = Infallible>>,
 }
 
 impl<'a> KeypadInput<'a> {
     /// Create a new `KeypadInput`. For use in macros.
     pub fn new(
-        row: &'a dyn InputPin<Error = Void>,
-        col: &'a RefCell<dyn OutputPin<Error = Void>>,
+        row: &'a dyn InputPin<Error = Infallible>,
+        col: &'a RefCell<dyn OutputPin<Error = Infallible>>,
     ) -> Self {
         Self { row, col }
     }
 }
 
 impl<'a> InputPin for KeypadInput<'a> {
-    type Error = Void;
+    type Error = Infallible;
 
     /// Read the state of the key at this row and column. Not reentrant.
     fn is_high(&self) -> Result<bool, Self::Error> {
@@ -287,13 +285,13 @@ macro_rules! keypad_struct {
             {
 
                 let rows: [
-                    &$crate::embedded_hal::digital::v2::InputPin<Error = $crate::void::Void>;
+                    &$crate::embedded_hal::digital::v2::InputPin<Error = core::convert::Infallible>;
                     keypad_struct!(@count $($row_type)*)
                 ]
                     = keypad_struct!(@tuple  self.rows,  ($($row_type),*));
 
                 let columns: [
-                    &$crate::_core::cell::RefCell<$crate::embedded_hal::digital::v2::OutputPin<Error = $crate::void::Void>>;
+                    &$crate::_core::cell::RefCell<$crate::embedded_hal::digital::v2::OutputPin<Error = core::convert::Infallible>>;
                     keypad_struct!(@count $($col_type)*)
                 ]
                     = keypad_struct!(@tuple  self.columns,  ($($col_type),*));
